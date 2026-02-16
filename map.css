@@ -1,0 +1,68 @@
+body {
+    margin: 0;
+}
+
+#map { 
+    height: 100vh;
+}
+
+.leaflet-interactive {
+    fill: #000000;
+    fill-opacity: 100;
+    stroke: none;
+}
+
+.control-pannel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background-color: #fffff0;
+    border-color: #ffa500;
+    border-style: solid;
+    border-width: 2px;
+    border-radius: 3px;
+    width: 130px;
+    height: auto;
+}
+
+input[type="checkbox"] {
+    appearance: none;
+    background-color: #ffa5001a;
+    border-radius: 12px;
+    height: 24px;
+    width: 60px;
+}
+/* 
+input[type="checkbox"]:hover {
+    background-color: #ffa500;
+    border-color: #ffa5007f;
+} */
+
+/* input[type="checkbox"]:active {
+    background-color: #33df754d;
+} */
+input[type="checkbox"]:checked {
+    background-color: #33df75;
+}
+
+input[type="checkbox"]::before {
+    background-color: #3030307d;
+    border-radius: 50%;
+    content: "";
+    display: inline-block;
+    transition: margin-left .1s;
+    height: 22px;
+    width: 22px;
+    margin-left: 1px;
+    margin-top: 1px;
+}
+input[type="checkbox"]:checked::before {
+    background-color: #0e9743;
+    margin-left: 37px;
+}
+
+input[type="range"] {
+    background-color: #ffa5001a;
+    border-radius: 12px;
+    width: 120px;
+}

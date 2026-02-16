@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="jp">
+
+<head>
+	<meta charset="utf-8">
+	<title>Leaflet Trial</title>
+    <link rel="stylesheet" href="./map.css" type="text/css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+     integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+     crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+     crossorigin=""></script>
+</head>
+
+<body>
+    <div id="map"></div>
+    <!-- <div id="control">
+        <input type="checkbox" class="toggle" id="play">
+    </div> -->
+    <script type="text/javascript">
+        let intervalId = null;
+
+        const play = document.getElementById("play");
+        
+        const intervalSec = [0,10000,5000,1500,1000,500,200,100]
+        
+        const bounds = [[85.0, -10000.0], [-85.0, 10000.0]];
+        let map = L.map('map',{
+            maxBounds: bounds,
+            minZoom: 2,
+            worldCopyJump: true
+        })
+        .setView([35.681066603693054, 139.76691825319122], 8);
+
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        }).addTo(map);
+        let cellLayer = L.layerGroup().addTo(map);
+        
+        L.Control.controlPannel = L.Control.extend({
+            onAdd: function(map) {
+                this._div = L.DomUtil.create("div","control-pannel");
+                L.DomEvent.disableClickPropagation(this._div);
+
+                const playControl = L.DomUtil.create('input', 'toggle');
+                playControl.id = "playControl";
+                playControl.type = 'checkbox';
+                playControl.addEventListener('change',(event) => {
+                    if(event.target.checked && document.getElementById("speedControl").value != 0) {
+                        intervalId = setInterval(stepLifeGame,intervalSec[document.getElementById("speedControl").value]);
+                    }
+                    else {
+                        clearInterval(intervalId);
+                        intervalId = null;
+                    }
+                });
+                this._div.append(playControl);
+
+                const br = L.DomUtil.create('br');
+                this._div.append(br);
+
+                const speedControl = L.DomUtil.create('input', 'speed');
+                speedControl.id = 'speedControl';
+                speedControl.type = 'range';
+                speedControl.min = '0';
+                speedControl.max = '7';
+                speedControl.value = '5';
+                speedControl.addEventListener('change',(event) => {
+                    if(document.getElementById("playControl").checked) {
+                        if(event.target.value != 0) {
+                            clearInterval(intervalId);
+                            intervalId = setInterval(stepLifeGame,intervalSec[event.target.value]);
+                        }
+                        else {
+                            clearInterval(intervalId);
+                            intervalId = null;
+                        }
+                    }
+                });
+                this._div.append(speedControl);
+                return this._div;
+            },
+            onRemove: function(map) {
+
+            }
+        });
+        L.control.controlPannel = function (opts) {
+            return new L.Control.controlPannel(opts);
+        }
+        L.control.controlPannel({
+            position: 'topleft'
+        }).addTo(map);
+        
+
+        const aliveCells = new Set();
+        const MAX_LAT = 88
+        const latIdxAccum = [0];
+        for (let i = 0; i < MAX_LAT; i++) {
+            latIdxAccum[i + 1] = latIdxAccum[i] + getDivisor(i);
+        }
+
+        map.on('click', function(e) {
+            const lat = e.latlng.lat;
+            const lng = e.latlng.lng;
+            
+            cellRegist(lat,lng);
+        });
+        map.on('move', function(e) {
+            redraw();
+        });
+
+        function cellRegist(lat,lng) {
+            const key = cellKeyIndex(lat,lng);
+            if (aliveCells.has(key)) {
+                aliveCells.delete(key);
+            } else {
+                aliveCells.add(key);
+            }
+            console.log(key);
+
+            redraw();
+        }
+
+        function cellKeyIndex(lat,lng) {
+            const latidx = latIndex(lat);
+            const lngidx = Math.floor(lng * 10);
+
+            return `${latidx},${lngidx}`
+        }
+
+        function latIndex(lat) {
+            const comp = getLatitudeComputation(lat);
+
+            const latIdxIntPart = latIdxAccum[comp.integerPart];
+            const latIdxDecPart = comp.bottomNumerator;
+
+            const idx = latIdxIntPart + latIdxDecPart;
+
+            return comp.sign == 1 ? idx : -(idx + 1)
+        }
+
+        function createPolygon(latIndex,lngIndex) {
+            var latitudes= getLatitudeByIndex(latIndex);
+
+            var leftLng = lngIndex/10;
+            var longitudes = [leftLng ,leftLng + 0.1];
+
+            console.log(`lat:${latitudes},lng:${longitudes}`)
+
+            return L.polygon([
+                [latitudes[0], longitudes[0]],
+                [latitudes[0], longitudes[1]],
+                [latitudes[1], longitudes[1]],
+                [latitudes[1], longitudes[0]]
+            ])
+        }
+        /**
+         * 引数として渡した緯度に対応する計算を行う
+         */
+        function getLatitudeComputation(lat) {
+            const absLat = Math.abs(lat);
+            const integerPart = Math.floor(absLat);
+            const divisor = getDivisor(integerPart);
+            const bottomNumerator = Math.floor((absLat - integerPart) * divisor);
+            const sign = lat >= 0 ? 1 : -1;
+            // console.log(`absLat=${absLat},integerPart=${integerPart}, divisor=${divisor}, bottomNumerator=${bottomNumerator}, sign=${sign}`)
+            return { absLat, integerPart, divisor, bottomNumerator, sign };
+        }
+        /**
+         * 緯度に対応する正方形のIndexを返す
+         */
+        function getIndexLat(comp) {
+            return [comp.bottomNumerator, comp.divisor];
+        }
+        /**
+         * 緯度に対応する正方形の上辺と下辺の緯度を返す
+         */
+        function getLatitudeByIndex(latIndex) {
+            const absIndexBottom = Math.abs(latIndex);
+            const absIndexTop = Math.abs(latIndex+1);
+            const integerPart = latIdxAccum.findIndex(v => v > absIndexBottom) - 1;
+            // const bottom = (comp.integerPart + comp.bottomNumerator / comp.divisor) * comp.sign;
+            const bottom = (integerPart + 1 / getDivisor(integerPart) * (absIndexBottom - latIdxAccum[integerPart])) * (absIndexBottom == 0 ? 1 : latIndex / absIndexBottom);
+            // const top = (comp.integerPart + (comp.bottomNumerator + 1) / comp.divisor) * comp.sign;
+            const top = (integerPart + 1 / getDivisor(integerPart) * (absIndexTop - latIdxAccum[integerPart])) * (absIndexTop == 0 ? 1 : (latIndex + 1) / absIndexTop);
+            return [bottom, top];
+        }
+
+        function redraw() {
+            cellLayer.clearLayers();
+
+            for (const key of aliveCells) {
+                const westBound = map.getBounds().getWest();
+                const eastBound = map.getBounds().getEast();
+
+                const westDrawBound = Math.floor(westBound / 10) * 10 * 10;
+                const eastDrawBound = Math.ceil(eastBound / 10) * 10 * 10;
+                                
+                const [ latIndex, lngIndex ] = key.split(',').map(Number);
+                if(lngIndex >= westDrawBound && lngIndex <= eastDrawBound) {
+                    createPolygonAndDrow(latIndex,lngIndex);
+                }
+                else if(lngIndex + 3600 <= eastDrawBound) {
+                    createPolygonAndDrow(latIndex,lngIndex + 3600);
+
+                }
+                else if(lngIndex - 3600 >= westDrawBound) {
+                    createPolygonAndDrow(latIndex,lngIndex - 3600);
+
+                }
+            }
+        }
+
+        function createPolygonAndDrow(latIndex,lngIndex) {
+            const polygon = createPolygon(latIndex,lngIndex);
+            polygon.addTo(cellLayer);
+        }
+
+        /**
+         * 緯度1度を幾つ分に区切るかを定義する
+         */ 
+        function getDivisor(integerPart) {
+            const rules = [
+                [17,10],
+                [29,11],
+                [36,12],
+                [42,13],
+                [46,14],
+                [49,15],
+                [52,16],
+                [55,17],
+                [57,18],
+                [59,19],
+                [60,20],
+                [62,21],
+                [63,22],
+                [64,23],
+                [65,24],
+                [66,25],
+                [67,26],
+                [68,27],
+                [69,28],
+                [70,29],
+                [71,31],
+                [72,32],
+                [73,34],
+                [74,36],
+                [75,39],
+                [76,41],
+                [77,44],
+                [78,48],
+                [79,52],
+                [80,58],
+                [81,64],
+                [82,72],
+                [83,82],
+                [84,96],
+                [85,115],
+                [86,143],
+                [87,191],
+                [88,287],
+                [89,573]
+            ];
+
+            return rules.find(([max]) => integerPart <= max)[1];
+        }
+
+        function calcNextGen() {
+            const neighborCount = new Map();
+
+            for (const key of aliveCells) {
+                const [y,x] = key.split(',').map(Number);
+
+                for (let iy = -1; iy <= 1; iy++) {
+                    let keyy = y+iy;
+                    if(Math.abs(keyy) >= latIdxAccum[86]) continue;
+                    for (let ix = -1; ix <= 1; ix++) {
+                        if(iy === 0 && ix === 0) continue;
+                        let keyx = x+ix;
+                        keyx = keyx < -1800 ? 1800 + keyx % 1800 : keyx >= 1800 ? keyx % 1800 -1800 : keyx;
+                        const neighborKey = `${y+iy},${keyx}`;
+                        neighborCount.set(neighborKey,(neighborCount.get(neighborKey) || 0) + 1);
+                    }
+                }
+            }
+
+            const nextGen = new Set();
+
+            for (const [key, n] of neighborCount) {
+                if (n === 3 || (n === 2 && aliveCells.has(key))) {
+                    nextGen.add(key);
+                }
+            }
+
+            aliveCells.clear();
+            nextGen.forEach(k => aliveCells.add(k));
+        }
+
+        function stepLifeGame() {
+            calcNextGen();
+            if(map.getZoom() >= 4) {
+                redraw();
+            }
+        }
+
+        play.addEventListener("change", (event)=>{
+            if(event.target.checked) {
+                intervalId = setInterval(stepLifeGame,500);
+            }
+            else {
+                clearInterval(intervalId);
+                intervalId = null;
+            }
+        });
+
+        function toggleLifegamePlay(event) {
+            console.log("onchange");
+            if(event.target.checked) {
+                intervalId = setInterval(stepLifeGame,500);
+            }
+            else {
+                clearInterval(intervalId);
+                intervalId = null;
+            }
+        }
+        
+    </script>
+</body>
+
+</html>
